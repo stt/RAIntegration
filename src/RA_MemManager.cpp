@@ -1,8 +1,14 @@
 #include "RA_MemManager.h"
 
+#include <fstream>
+#include <thread>
+#include <iostream>
 #include "RA_Core.h"
 #include "RA_Achievement.h"
 #include "RA_Dlg_Memory.h"
+#include "sharedmemory.h"
+
+#define SHM_NAME "RA_asdf"
 
 MemManager g_MemManager;
 
@@ -17,7 +23,56 @@ MemManager::MemManager()
 //	virtual
 MemManager::~MemManager()
 {
+    ghoul::SharedMemory::remove(SHM_NAME);  // TODO check
 	ClearMemoryBanks();
+}
+
+void MemManager::StartIPCThread() {
+    std::thread(MemManager::ManageShm).detach();
+}
+
+void MemManager::ManageShm() {
+    std::ofstream ouft("ipclog.txt", std::ios_base::app);
+    try {
+        if(!ghoul::SharedMemory::exists(SHM_NAME)) {
+            ghoul::SharedMemory::create(SHM_NAME, 1024);    // TODO sz
+        }
+    }
+    catch (const ghoul::SharedMemory::SharedMemoryError& e) {
+        ouft << "Error: " << e.message << std::endl;
+        return;
+    }
+    ghoul::SharedMemory* sm = new ghoul::SharedMemory(SHM_NAME);
+    ghoul::Header* h = sm->shared_header();
+    //strncpy((char*)sm->memory(), "FAFAFA", 6);
+    while (1) {
+        std::this_thread::yield();
+        if (g_MemManager.TotalBankSize() == 0) continue;
+
+        if (h->msg_type == ghoul::ShmMessageType::Request) {
+            switch (h->op) {
+            case ghoul::ShmOperation::Read:
+                sm->acquireLock();
+                //todo h->args[0] bankid
+                // should it do offset + sum(m_Banks.at(0...bankID)->bankSize)?
+                g_MemManager.m_nActiveMemBank = 0;
+
+                g_MemManager.ActiveBankRAMRead((unsigned char*)sm->memory(), h->args[1], h->args[2]);
+                h->msg_type = ghoul::ShmMessageType::Response;
+                sm->releaseLock();
+                break;
+
+            case ghoul::ShmOperation::Write:
+                sm->acquireLock();
+                for(int i=0; i<h->args[2]; i++) {
+                    g_MemManager.ActiveBankRAMByteWrite(h->args[0] + i, h->args[1]);
+                }
+                h->msg_type = ghoul::ShmMessageType::Response;
+                sm->releaseLock();
+            }
+        }
+
+    }
 }
 
 void MemManager::ClearMemoryBanks()
@@ -297,6 +352,8 @@ std::vector<size_t> MemManager::GetBankIDs() const
 
 unsigned char MemManager::ActiveBankRAMByteRead(ByteAddress nOffs) const
 {
+    m_mMemAccess.lock();
+
 	const BankData* bank = nullptr;
 
 	int bankID = 0;
@@ -304,18 +361,23 @@ unsigned char MemManager::ActiveBankRAMByteRead(ByteAddress nOffs) const
 	while (bankID < numBanks)
 	{
 		bank = &m_Banks.at(bankID);
-		if (nOffs < bank->BankSize)
+        if (nOffs < bank->BankSize) {
+            m_mMemAccess.unlock();
 			return bank->Reader(nOffs);
+        }
 
 		nOffs -= bank->BankSize;
 		bankID++;
 	}
+    m_mMemAccess.unlock();
 
 	return 0;
 }
 
 void MemManager::ActiveBankRAMRead(unsigned char buffer[], ByteAddress nOffs, size_t count) const
 {
+    m_mMemAccess.lock();
+
 	const BankData* bank = nullptr;
 
 	int bankID = 0;
@@ -331,7 +393,7 @@ void MemManager::ActiveBankRAMRead(unsigned char buffer[], ByteAddress nOffs, si
 	}
 
 	if (bank == nullptr)
-		return;
+		goto exit;
 
 	_RAMByteReadFn* reader = bank->Reader;
 
@@ -346,7 +408,7 @@ void MemManager::ActiveBankRAMRead(unsigned char buffer[], ByteAddress nOffs, si
 		nOffs -= bank->BankSize;
 		bankID++;
 		if (bankID >= numBanks)
-			return;
+			goto exit;
 		
 		bank = &m_Banks.at(bankID);
 		reader = bank->Reader;
@@ -354,10 +416,15 @@ void MemManager::ActiveBankRAMRead(unsigned char buffer[], ByteAddress nOffs, si
 
 	while (count-- > 0)
 		*buffer++ = reader(nOffs++);
+
+    exit:
+    m_mMemAccess.unlock();
 }
 
 void MemManager::ActiveBankRAMByteWrite(ByteAddress nOffs, unsigned int nVal)
 {
+    m_mMemAccess.lock();
+
 	int bankID = 0;
 	int numBanks = m_Banks.size();
 	while (bankID < numBanks && nOffs >= m_Banks.at(bankID).BankSize)
@@ -370,4 +437,6 @@ void MemManager::ActiveBankRAMByteWrite(ByteAddress nOffs, unsigned int nVal)
 	{
 		m_Banks.at(bankID).Writer(nOffs, nVal);
 	}
+
+    m_mMemAccess.unlock();
 }

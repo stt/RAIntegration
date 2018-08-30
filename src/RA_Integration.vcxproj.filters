@@ -111,6 +111,12 @@
     <ClCompile Include="RA_ImageFactory.cpp">
       <Filter>Services</Filter>
     </ClCompile>
+    <ClCompile Include="sharedmemory.cpp">
+      <Filter>Services</Filter>
+    </ClCompile>
+    <ClCompile Include="exception.cpp">
+      <Filter>Services</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="md5.h">
@@ -210,6 +216,12 @@
       <Filter>UI</Filter>
     </ClInclude>
     <ClInclude Include="RA_ImageFactory.h">
+      <Filter>Services</Filter>
+    </ClInclude>
+    <ClInclude Include="sharedmemory.h">
+      <Filter>Services</Filter>
+    </ClInclude>
+    <ClInclude Include="exception.h">
       <Filter>Services</Filter>
     </ClInclude>
   </ItemGroup>

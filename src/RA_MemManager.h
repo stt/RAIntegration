@@ -1,5 +1,6 @@
 #pragma once
 
+#include <mutex>
 #include "RA_Condition.h"
 
 class MemCandidate
@@ -84,10 +85,14 @@ public:
 	void ActiveBankRAMByteWrite(ByteAddress nOffs, unsigned int nVal);
 
 	void ActiveBankRAMRead(unsigned char buffer[], ByteAddress nOffs, size_t count) const;
+	static void StartIPCThread();
+	static void ManageShm();
 
 private:
 	std::map<size_t, BankData> m_Banks;
 	unsigned short m_nActiveMemBank;
+	mutable std::mutex m_mMemAccess;
+	std::thread* ShmThread;
 
 	MemCandidate* m_Candidates;		//	Pointer to an array
 	size_t m_nNumCandidates;		//	Actual quantity of legal candidates

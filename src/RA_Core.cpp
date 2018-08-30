@@ -199,6 +199,8 @@ API BOOL CCONV _RA_InitI(HWND hMainHWND, /*enum EmulatorID*/int nEmulatorID, con
 
 	RAWeb::RA_InitializeHTTPThreads();
 
+	MemManager::StartIPCThread();
+
 	//////////////////////////////////////////////////////////////////////////
 	//	Dialogs:
 	g_MemoryDialog.Init();
